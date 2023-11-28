@@ -241,7 +241,7 @@ mod tests {
                     [NodeIndex::NULL; MAX_CHILDREN],
                     NodeIndex::NULL,
                     NodeIndex::NULL,
-                )
+                ),
             ]
         };
 
@@ -249,10 +249,9 @@ mod tests {
         control_tree.arena[0].add_child(b'C', 2);
         control_tree.arena[3].add_child(b'C', 1);
 
-        let mut cursor = Cursor {current_node_index_in_arena: 1, index : 1, tree: &mut tree};
+        let mut cursor = Cursor { current_node_index_in_arena: 1, index: 1, tree: &mut tree };
         cursor.split_edge(input.as_bytes());
 
-        assert_eq!(cursor, Cursor {current_node_index_in_arena: 3 , index: 1, tree: &mut control_tree})
+        assert_eq!(cursor, Cursor { current_node_index_in_arena: 3, index: 1, tree: &mut control_tree })
     }
-
 }

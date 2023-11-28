@@ -55,13 +55,13 @@ impl TreeBuilder for UkkonenBuilder {
         let mut cursor = Cursor::new(&mut tree);
         let input_string = data.as_bytes();
         let end_index = input_string.len();
+        let mut current_protein_index: usize = 0;
         let mut num_leaves = 0;
         for j in 1..=end_index {
             let mut prev_internal_node: Option<NodeIndex> = None;
             let num_leaves_copy = num_leaves; // take copy since we cannot change the value that is used in the loop header itself
             // skip the first numLeaves leaves since this is rule 1 and can be skipped
             for i in num_leaves_copy..j {
-
                 // if there is a previous internal node AND we are at a node with the cursor
                 if let (Some(prev_internal_node_index), true) = (prev_internal_node, cursor.at_node()) {
                     cursor.add_link(prev_internal_node_index, cursor.current_node_index_in_arena);
@@ -80,8 +80,11 @@ impl TreeBuilder for UkkonenBuilder {
                     }
                     prev_internal_node = Some(new_internal_node_index);
                 }
-                cursor.add_leaf_from_position(j - 1, i, input_string);
+                cursor.add_leaf_from_position(j - 1, current_protein_index, input_string);
                 num_leaves += 1;
+                if input_string[i] == b'#' {
+                    current_protein_index += 1;
+                }
 
                 // follow the suffix link since the extension is complete
                 cursor.follow_link(input_string);

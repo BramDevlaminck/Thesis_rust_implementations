@@ -1,29 +1,35 @@
-use std::{fs, io};
 use std::fs::File;
+use std::io;
 use std::io::{BufRead, Write};
+use std::ops::Add;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Parser, ValueEnum};
+use clap::{arg, Parser, ValueEnum};
+use umgap::taxon::TaxonId;
 
 use crate::searcher::Searcher;
+use crate::taxon_id_calculator::TaxonIdCalculator;
 use crate::tree::Tree;
 use crate::tree_builder::{TreeBuilder, UkkonenBuilder};
 
 mod tree_builder;
 mod tree;
 mod cursor;
-mod read_only_cursor;
+mod search_cursor;
 mod searcher;
+mod taxon_id_calculator;
 
 
 /// Enum that represents the 2 kinds of search that we support
 /// - Search until match and return boolean that indicates if there is a match
 /// - Search until match, if there is a match search the whole subtree to find all matching proteins
+/// - Search until match, there we can immediately retrieve the taxonId that represents all the children
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum SearchMode {
     Match,
     AllOccurrences,
+    TaxonId,
 }
 
 #[derive(Parser, Debug)]
@@ -39,12 +45,19 @@ pub struct Arguments {
     build_only: bool,
     /// `match` will only look if there is match.
     /// While `all-occurrences` will search for the match and look for all the different matches in the subtree.
+    /// `Taxon-id` will search for the matching taxon id using lca*
     #[arg(short, long, value_enum)]
     mode: Option<SearchMode>,
     /// This will change the output to <found (0 or 1)>;<protein length>;<search time in ms>
     /// The given num will be used to run the search x times and the average of these x runs will be given as search time
     #[arg(short, long)]
     verbose: Option<u8>,
+    #[arg(short, long)]
+    /// The taxonomy to be used as a tsv file. This is a preprocessed version of the NCBI taxonomy.
+    taxonomy: String,
+    #[arg(long)]
+    /// Prints all the taxon ids in the tree in pre-order traversal
+    print_tree_taxon_ids: bool,
 }
 
 // The output is wrapped in a Result to allow matching on errors
@@ -77,38 +90,62 @@ fn handle_search_word(searcher: &mut Searcher, word: String, search_mode: &Searc
         let mut found_total: bool = false;
         let mut total_time: f64 = 0.0;
         for _ in 0..num_iter {
-            let execution_time: f64;
-            let found: bool;
-
-            // CLion / RustRover complains about the destructuring into existing variables not working, but this does indeed work (since rust 1.59)
-            if *search_mode == SearchMode::Match {
-                (found, execution_time) = time_execution(searcher, &|searcher| searcher.search_if_match(word.as_bytes()));
-            } else {
-                (found, execution_time) = time_execution(searcher, &|searcher| !searcher.find_all_suffix_indices(word.as_bytes()).is_empty());
-            }
+            let (found, execution_time) = match *search_mode {
+                SearchMode::Match => time_execution(searcher, &|searcher| searcher.search_if_match(word.as_bytes())),
+                SearchMode::AllOccurrences => time_execution(searcher, &|searcher| !searcher.find_all_suffix_indices(word.as_bytes()).is_empty()),
+                SearchMode::TaxonId => time_execution(searcher, &|searcher| searcher.search_taxon_id(word.as_bytes()).is_some()),
+            };
             total_time += execution_time;
             found_total = found;
         }
         let avg = total_time / (num_iter as f64);
 
         verbose_output.push(format!("{};{};{}", found_total as u8, word.len(), avg));
-    } else if *search_mode == SearchMode::Match {
-        println!("{}", searcher.search_if_match(word.as_bytes()))
     } else {
-        let results = searcher.search_protein(word.as_bytes());
-        println!("found {} matches", results.len());
-        results.iter()
-            .for_each(|res| println!("* {}", res));
+        match *search_mode {
+            SearchMode::Match => println!("{}", searcher.search_if_match(word.as_bytes())),
+            SearchMode::AllOccurrences => {
+                let results = searcher.search_protein(word.as_bytes());
+                println!("found {} matches", results.len());
+                results.iter()
+                    .for_each(|res| println!("* {}", res.sequence));
+            }
+            SearchMode::TaxonId => {
+                match searcher.search_taxon_id(word.as_bytes()) {
+                    Some(taxon_id) => println!("{}", taxon_id),
+                    None => println!("/"),
+                }
+            }
+        }
     }
+}
+
+pub struct Protein {
+    pub sequence: String,
+    pub id: TaxonId,
 }
 
 /// Main run function that executes all the logic with the received arguments
 pub fn run(args: Arguments) {
-    let mut data = fs::read_to_string(args.database_file).expect("Reading input file to build tree from went wrong");
-    data = data.to_uppercase();
-    data.push('$');
+    let proteins = get_proteins_from_database_file(&args.database_file);
+    // construct the sequence that will be used to build the tree
+    let data = proteins
+        .iter()
+        .map(|prot| prot.sequence.clone())
+        .collect::<Vec<String>>()
+        .join("#")
+        .add("$");
 
-    let tree = Tree::new(&data, UkkonenBuilder::new());
+    // build the tree
+    let mut tree = Tree::new(&data, UkkonenBuilder::new());
+    // fill in the Taxon Ids in the tree using the LCA implementations from UMGAP
+    let taxon_id_calculator = TaxonIdCalculator::new(&args.taxonomy);
+    taxon_id_calculator.calculate_taxon_ids(&mut tree, &proteins);
+
+    // print the taxon ids of the tree if flag set
+    if args.print_tree_taxon_ids {
+        TaxonIdCalculator::output_all_taxon_ids(&tree);
+    }
 
     // option that only builds the tree, but does not allow for querying (easy for benchmark purposes)
     if args.build_only {
@@ -118,13 +155,39 @@ pub fn run(args: Arguments) {
         std::process::exit(1);
     }
 
-    let mut searcher = Searcher::new(&tree, data.as_bytes());
-    let mode = &args.mode.unwrap();
+    let searcher = Searcher::new(&tree, data.as_bytes(), &proteins, &taxon_id_calculator);
+    execute_search(searcher, &args)
+}
+
+/// Parse the given database tsv file into a Vector of Proteins with the data from the tsv file
+fn get_proteins_from_database_file(database_file: &str) -> Vec<Protein> {
+    let mut proteins: Vec<Protein> = vec![];
+    if let Ok(lines) = read_lines(database_file) {
+        for line in lines.into_iter().flatten() {
+            let [_, _, protein_id_str, _, _, protein_sequence]: [&str; 6] = line.splitn(6, '\t').collect::<Vec<&str>>().try_into().unwrap();
+            let protein_id_usize = protein_id_str.parse::<TaxonId>().expect("Could not parse id of protein to usize!");
+            proteins.push(
+                Protein {
+                    sequence: protein_sequence.to_uppercase(),
+                    id: protein_id_usize,
+                }
+            )
+        }
+    } else {
+        eprintln!("Database file {} could not be opened!", database_file);
+        std::process::exit(1);
+    }
+    proteins
+}
+
+/// Perform the search as set with the commandline arguments
+fn execute_search(mut searcher: Searcher, args: &Arguments) {
+    let mode = args.mode.as_ref().unwrap();
     let verbose = args.verbose;
     let mut verbose_output: Vec<String> = vec![];
-    if let Some(search_file) = args.search_file {
+    if let Some(search_file) = &args.search_file {
         // File `search_file` must exist in the current path
-        if let Ok(lines) = read_lines(&search_file) {
+        if let Ok(lines) = read_lines(search_file) {
             for line in lines.into_iter().flatten() {
                 handle_search_word(&mut searcher, line, mode, verbose, &mut verbose_output);
             }
