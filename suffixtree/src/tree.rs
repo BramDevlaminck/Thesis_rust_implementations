@@ -1,4 +1,5 @@
 use umgap::taxon::TaxonId;
+use tsv_utils::{END_CHARACTER, SEPARATION_CHARACTER};
 use crate::tree_builder::TreeBuilder;
 
 pub const MAX_CHILDREN: usize = 28;
@@ -89,9 +90,9 @@ impl Node {
     }
 
     fn char_to_child_index(character: u8) -> usize {
-        if character == b'#' {
+        if character == SEPARATION_CHARACTER {
             26
-        } else if character == b'$' {
+        } else if character == END_CHARACTER {
             27
         } else {
             character as usize - 65 // 65 is 'A' in ascii

@@ -1,3 +1,4 @@
+use tsv_utils::SEPARATION_CHARACTER;
 use crate::cursor::{Cursor, CursorIterator};
 use crate::tree::{NodeIndex, Tree};
 
@@ -82,7 +83,7 @@ impl TreeBuilder for UkkonenBuilder {
                 }
                 cursor.add_leaf_from_position(j - 1, current_protein_index, input_string);
                 num_leaves += 1;
-                if input_string[i] == b'#' {
+                if input_string[i] == SEPARATION_CHARACTER {
                     current_protein_index += 1;
                 }
 

@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use rust_implementations::{Arguments, run};
+use suffixtree::{Arguments, run};
 
 fn main() {
     let args = Arguments::parse();

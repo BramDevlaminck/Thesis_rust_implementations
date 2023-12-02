@@ -1,19 +1,19 @@
 use umgap::taxon::TaxonId;
 use crate::Protein;
 use crate::search_cursor::SearchCursor;
-use crate::taxon_id_calculator::TaxonIdCalculator;
+use crate::tree_taxon_id_calculator::TreeTaxonIdCalculator;
 use crate::tree::{Node, Nullable, Tree};
 
 pub struct Searcher<'a> {
     cursor: SearchCursor<'a>,
     original_input_string: &'a [u8],
     proteins: &'a Vec<Protein>,
-    taxon_id_calculator: &'a TaxonIdCalculator, // used to snap taxon_id
+    taxon_id_calculator: &'a TreeTaxonIdCalculator, // used to snap taxon_id
 }
 
 
 impl<'a> Searcher<'a> {
-    pub fn new(tree: &'a Tree, original_input_string: &'a [u8], proteins: &'a Vec<Protein>, taxon_id_calculator: &'a TaxonIdCalculator) -> Self {
+    pub fn new(tree: &'a Tree, original_input_string: &'a [u8], proteins: &'a Vec<Protein>, taxon_id_calculator: &'a TreeTaxonIdCalculator) -> Self {
         Self {
             cursor: SearchCursor::new(tree),
             original_input_string,

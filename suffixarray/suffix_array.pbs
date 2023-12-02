@@ -1,0 +1,32 @@
+#!/bin/bash
+
+#########################################################################################################
+### This script is designed to run on the Ghent university HPC                                        ###
+###                                                                                                   ###
+### how to use:                                                                                       ###
+### 1) load the rust module Rust/1.70.0-GCCcore-12.3.0 with `module load Rust/1.70.0-GCCcore-12.3.0`  ###
+### 2) compile the code on the login node using `cargo build --release`                               ###
+### 3) navigate the to folder of the binary (in `target/release`)                                     ###
+### 4) submit the job to the queue with `qsub suffix_array.pbs`                                       ###
+#########################################################################################################
+
+# go to cluster with high memory
+module swap cluster/gallade
+
+# define requested memory, cpu resources and email notifications
+#PBS -m abe
+#PBS -l walltime=00:05:00
+#PBS -l mem=5gb
+#PBS -N suffix_array_construction
+
+# define output and error files
+#PBS -o stdout.$PBS_JOBID
+#PBS -e stderr.$PBS_JOBID
+
+folder="swissprot_var1/"
+prefix="~/data/BenchmarkData/"
+search_file="search_file_no_mch.tsv"
+
+# go to current working dir and execute
+cd $PBS_O_WORKDIR
+./suffixarray  -d "$prefix""$folder"protein_database.tsv -s "$prefix""$folder""$search_file" -t "$prefix"taxons.tsv -m all-occurrences
