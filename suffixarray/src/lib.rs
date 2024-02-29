@@ -193,11 +193,12 @@ fn execute_search(searcher: &Searcher, args: &Arguments) -> Result<(), Box<dyn E
         .par_iter()
         // calculate the results
         .map(|peptide| handle_search_word(searcher, peptide, mode, cutoff))
-        // output the results, collect is needed to store order so the output is in the right sequential order
-        .collect::<Vec<String>>()// TODO: this collect that makes the output again sequential is possibly unneeded since we also output the corresponding peptide (but make sure this still makes the right peptide;taxon-id mapping)
-        .iter()
         .enumerate()
-        .for_each(|(index, res)| println!("{};{}", all_peptides[index], res));
+        .for_each(|(index, res)| {
+            if let Some(output) = res {
+                println!("{};{}", all_peptides[index], output);
+            }
+        });
 
     let end_time = get_time_ms()?;
 
@@ -216,26 +217,26 @@ fn handle_search_word(
     word: &str,
     search_mode: &SearchMode,
     cutoff: usize,
-) -> String {
+) -> Option<String> {
     let word = word.strip_suffix('\n').unwrap_or(word).to_uppercase();
 
     // words that are shorter than the sample rate are not searchable
     if word.len() < searcher.sample_rate as usize {
         println!("/ (word too short short for SA sample size)");
-        return String::new();
+        return Some(String::new());
     }
 
     match *search_mode {
-        SearchMode::Match => format!("{}", searcher.search_if_match(word.as_bytes())),
+        SearchMode::Match => Some(format!("{}", searcher.search_if_match(word.as_bytes()))),
         SearchMode::MinMaxBound => {
             let (found, min_bound, max_bound) = searcher.search_bounds(word.as_bytes());
-            format!("{found};{min_bound};{max_bound};")
+            Some(format!("{found};{min_bound};{max_bound};"))
         }
         SearchMode::AllOccurrences => {
             let results = searcher.search_protein(word.as_bytes());
             let number_of_proteins = results.len();
             let peptide_length = word.len();
-            format!("{peptide_length};{number_of_proteins};") // TODO: return all the matching protein strings perhaps?
+            Some(format!("{peptide_length};{number_of_proteins};")) // TODO: return all the matching protein strings perhaps?
         }
         SearchMode::TaxonId => {
             let suffixes = searcher.search_matching_suffixes(word.as_bytes(), cutoff);
@@ -247,9 +248,9 @@ fn handle_search_word(
             };
 
             if let Some(id) = result {
-                format!("{id}")
+                Some(format!("{id}"))
             } else {
-                "/".to_string()
+                None
             }
         }
     }
