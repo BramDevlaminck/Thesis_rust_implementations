@@ -32,8 +32,8 @@ fn deserialize_sa(data: &[u8]) -> Vec<i64> {
 
 // from: https://gist.github.com/taylorsmithgg/ba7b070c0964aa8b86d311ab6f8f5508
 // https://dev.to/oliverjumpertz/how-to-write-files-in-rust-m06?comments_sort=top
-pub fn write_binary(sample_rate: u8, suffix_array: &Vec<i64>, text: &Vec<u8>, name: &str) -> Result<(), std::io::Error> {
-    //  TODO: how to store the uniprot protein data? store in separate files, or just assume we re-read the complete tsv
+pub fn write_binary(sample_rate: u8, suffix_array: &[i64], name: &str) -> Result<(), std::io::Error> {
+    // TODO: how to store the uniprot protein data? store in separate files, or just assume we re-read the complete tsv
     //  we could also use the first x bytes to store the uniprot version that this SA was built for
     // create the file
     let mut f = OpenOptions::new()
@@ -50,43 +50,18 @@ pub fn write_binary(sample_rate: u8, suffix_array: &Vec<i64>, text: &Vec<u8>, na
         f.write_all(&suffix_array[start_index..end_index].serialize())?;
     }
 
-
-    let mut f = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(name.to_owned() + "_text.bin")?;
-
-    let text_len = text.len();
-    for start_index in (0..text_len).step_by(ONE_GIB) {
-        let end_index = min(start_index + ONE_GIB, text_len);
-        f.write_all(&text[start_index..end_index])?;
-    }
-
     Ok(())
 }
 
 pub fn load_binary(name: &str) -> Result<(u8, Vec<i64>), Box<dyn Error>> {
     // read the SA and deserialize it into a vec of i64
     let sa_file = File::open(name)?;
-    // let reader = BufReader::new(sa_file);
     let (sample_rate, sa) = read_sa_file(&sa_file)?;
-
-    // // read the text file
-    // let mut text_file = OpenOptions::new()
-    //     .read(true)
-    //     .open(name.to_owned() + "_text.bin")?;
-    //
-    // let num_bytes_text = text_file.metadata()?.len() as usize;
-    // let mut text = vec![0; num_bytes_text];
-    //
-    // text_file.read_to_end(&mut text)?;
-
     Ok((sample_rate, sa))
 }
 
 fn read_sa_file(mut file: &File) -> Result<(u8, Vec<i64>), Box<dyn Error>> {
-    let mut sample_rate_buffer = [0_u8; 1]; // TODO: if sample rate should be bigger than a u8, change this buffer size!
+    let mut sample_rate_buffer = [0_u8; 1];
     file.read_exact(&mut sample_rate_buffer).map_err(|_| "Could not read the sample rate from the binary file")?;
     let sample_rate = sample_rate_buffer[0];
 

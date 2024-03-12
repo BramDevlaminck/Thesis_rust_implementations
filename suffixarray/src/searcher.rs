@@ -169,25 +169,38 @@ impl <'a> Searcher<'a> {
         false
     }
 
-    pub fn search_protein(&self, search_string: &[u8]) -> Vec<&Protein> {
-        let mut matching_suffixes = vec![];
-        for skip in 0..self.sample_rate as usize {
+    /// Search all the suffixes that search string matches with
+    #[inline]
+    pub fn search_matching_suffixes(&self, search_string: &[u8], max_matches: usize) -> Vec<i64> {
+        let mut matching_suffixes: Vec<i64> = vec![];
+        let mut skip: usize = 0;
+        while matching_suffixes.len() < max_matches && skip < self.sample_rate as usize {
             let (found, min_bound, max_bound) = self.search_bounds(&search_string[skip..]);
             // if the shorter part is matched, see if what goes before the matched suffix matches the unmatched part of the prefix
             if found {
                 let unmatched_prefix = &search_string[..skip];
-                // try all the partially matched suffixes and store the matching suffixes in an array
-                for sa_index in min_bound..max_bound {
+                // try all the partially matched suffixes and store the matching suffixes in an array (stop when our max number of matches is reached)
+                let mut sa_index = min_bound;
+                while sa_index < max_bound && matching_suffixes.len() < max_matches {
                     let suffix = self.sa[sa_index] as usize;
-                    if suffix >= skip && unmatched_prefix == &self.proteins.input_string[suffix - skip..suffix] {
-                        matching_suffixes.push(suffix - skip);
+                    // if skip is 0, then we already checked the complete match during bound search, otherwise check if the skipped part also matches
+                    if skip == 0 || (suffix >= skip && unmatched_prefix == &self.proteins.input_string[suffix - skip..suffix]) {
+                        matching_suffixes.push((suffix - skip) as i64);
                     }
+                    sa_index += 1;
                 }
             }
+            skip += 1;
         }
+        matching_suffixes
+    }
+
+    /// get all the proteins matching with the given suffixes
+    #[inline]
+    pub fn retrieve_proteins(&self, suffixes: &Vec<i64>) -> Vec<&Protein> {
         let mut res = vec![];
-        for suffix in matching_suffixes {
-            let protein_index = self.suffix_index_to_protein.suffix_to_protein(suffix as i64);
+        for &suffix in suffixes {
+            let protein_index = self.suffix_index_to_protein.suffix_to_protein(suffix);
             if !protein_index.is_null() {
                 res.push(&self.proteins.proteins[protein_index as usize]);
             }
@@ -195,13 +208,23 @@ impl <'a> Searcher<'a> {
         res
     }
 
-    pub fn search_taxon_id(&self, search_string: &[u8]) -> Option<TaxonId> {
-        let taxon_ids: Vec<TaxonId> = self.search_protein(search_string).into_iter().map(|prot| prot.id).collect();
+    /// Search all the Proteins that a given search_string matches with
+    pub fn search_protein(&self, search_string: &[u8]) -> Vec<&Protein> {
+        let matching_suffixes = self.search_matching_suffixes(search_string, usize::MAX);
+        self.retrieve_proteins(&matching_suffixes)
+    }
+
+    #[inline]
+    pub fn retrieve_taxon_id(&self, proteins: &[&Protein]) -> Option<TaxonId> {
+        let taxon_ids: Vec<TaxonId> = proteins.iter().map(|prot| prot.id).collect();
         match taxon_ids.is_empty() {
             true => None,
             false => Some(self.taxon_id_calculator.snap_taxon_id(self.taxon_id_calculator.get_aggregate(taxon_ids)))
         }
+    }
 
+    pub fn search_taxon_id(&self, search_string: &[u8]) -> Option<TaxonId> {
+        self.retrieve_taxon_id(&self.search_protein(search_string))
     }
 
 }

@@ -1,30 +1,38 @@
-use umgap::{agg, rmq::mix::MixCalculator, taxon};
-use umgap::agg::Aggregator;
+use umgap::{agg, rmq, taxon};
+use umgap::agg::MultiThreadSafeAggregator;
 use umgap::taxon::{TaxonId, TaxonList, TaxonTree};
 pub struct TaxonIdCalculator {
     snapping: Vec<Option<TaxonId>>,
-    aggregator: Box<dyn Aggregator>,
+    aggregator: Box<dyn MultiThreadSafeAggregator>,
     taxon_list: TaxonList
 }
 
-pub trait TaxonIdVerifier {
+pub trait TaxonIdVerifier: Send {
 
     fn taxon_id_exists(&self, id: TaxonId) -> bool;
 
 }
 
+pub enum AggregationMethod {
+    Lca,
+    LcaStar
+}
+
 impl TaxonIdCalculator {
-    pub fn new(ncbi_taxonomy_fasta_file: &str) -> Box<Self> {
+    pub fn new(ncbi_taxonomy_fasta_file: &str, aggregation_method: AggregationMethod) -> Box<Self> {
         let taxons = taxon::read_taxa_file(ncbi_taxonomy_fasta_file).unwrap();
         let taxon_tree = TaxonTree::new(&taxons);
         let by_id = TaxonList::new(taxons);
         let snapping = taxon_tree.snapping(&by_id, true);
-
-        let aggregator = MixCalculator::new(taxon_tree, 1.0);
+        
+        let aggregator: Box<dyn MultiThreadSafeAggregator> = match aggregation_method { 
+            AggregationMethod::Lca => Box::new(rmq::mix::MixCalculator::new(taxon_tree, 1.0)),
+            AggregationMethod::LcaStar => Box::new(rmq::lca::LCACalculator::new(taxon_tree)),
+        };
 
         Box::new(Self {
             snapping,
-            aggregator: Box::new(aggregator),
+            aggregator,
             taxon_list: by_id
         })
     }

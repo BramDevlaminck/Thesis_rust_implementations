@@ -1,6 +1,6 @@
 use umgap::taxon::TaxonId;
 
-use tsv_utils::taxon_id_calculator::{TaxonIdCalculator, TaxonIdVerifier};
+use tsv_utils::taxon_id_calculator::{AggregationMethod, TaxonIdCalculator, TaxonIdVerifier};
 
 use crate::Protein;
 use crate::tree::{NodeIndex, Nullable, Tree};
@@ -10,10 +10,13 @@ pub struct TreeTaxonIdCalculator {
 }
 
 impl TreeTaxonIdCalculator {
-
+    
+    /// Always aggregate using LCA and not LCA*
+    /// since we precalculate the aggregate efficiently in the tree
+    /// and LCA* gives incorrect results the way we precalculate the taxa
     pub fn new(ncbi_taxonomy_fasta_file: &str) -> Self {
         Self {
-            taxon_id_calculator: TaxonIdCalculator::new(ncbi_taxonomy_fasta_file)
+            taxon_id_calculator: TaxonIdCalculator::new(ncbi_taxonomy_fasta_file, AggregationMethod::Lca)
         }
     }
 

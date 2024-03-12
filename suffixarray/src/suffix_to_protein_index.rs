@@ -10,7 +10,7 @@ pub enum SuffixToProteinMappingStyle {
 }
 
 
-pub trait SuffixToProteinIndex {
+pub trait SuffixToProteinIndex: Send + Sync {
     fn suffix_to_protein(&self, suffix: i64) -> u32;
 }
 

@@ -34,6 +34,7 @@ prefix="$VSC_DATA_VO/bram/"
 
 # load Rust
 module load Rust/1.75.0-GCCcore-12.3.0
+module load Clang/16.0.6-GCCcore-12.3.0 # needed to build the bindings from Rust to C
 
 # go to current working dir and execute
 cd $PBS_O_WORKDIR

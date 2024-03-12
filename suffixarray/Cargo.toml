@@ -9,6 +9,7 @@ edition = "2021"
 clap = { version = "4.4.8", features = ["derive"] }
 get-size = "0.1.4"
 libdivsufsort-rs = "0.1.0"
-tsv-utils = { path = "../tsv-utils"}
-umgap = "1.0.0"
-libsais64-rs = {path = "../libsais64-rs"}
+tsv-utils = { path = "../tsv-utils" }
+umgap = "1.1.0"
+libsais64-rs = { path = "../libsais64-rs" }
+rayon = "1.8.1"

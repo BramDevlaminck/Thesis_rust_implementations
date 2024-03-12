@@ -47,7 +47,7 @@ pub fn get_proteins_from_database_file(database_file: &str, taxon_id_calculator:
     let mut proteins: Vec<Protein> = vec![];
     let mut begin_index: usize = 0;
     if let Ok(lines) = read_lines(database_file) {
-        for line in lines.into_iter().flatten() {
+        for line in lines.into_iter().map_while(Result::ok) {
             let [_, _, protein_id_str, _, _, protein_sequence]: [&str; 6] = line.splitn(6, '\t').collect::<Vec<&str>>().try_into().unwrap();
             let protein_id_as_taxon_id = protein_id_str.parse::<TaxonId>().expect("Could not parse id of protein to usize!");
             // if the taxon ID is not a valid ID in our NCBI taxonomy, skip this protein

@@ -12,11 +12,11 @@
 
 # define requested memory, cpu resources and email notifications
 #PBS -m abe
-#PBS -l walltime=10:00:00
-#PBS -l mem=500gb
+#PBS -l walltime=00:15:00
+#PBS -l mem=350gb
 # ask for 1 node, 1 cpu (not more needed since we don't have parallelism)
 #PBS -l nodes=1:ppn=1
-#PBS -N uniprot_search_sparse3
+#PBS -N uniprot_search_sparse3_bound
 
 # define output and error files
 #PBS -o stdout.$PBS_JOBID
@@ -32,11 +32,11 @@ module load Clang/16.0.6-GCCcore-12.3.0 # needed to build the bindings from Rust
 # go to current working dir
 cd $PBS_O_WORKDIR
 
-# compile
-cargo build --release
-
 # clear the cmake cache to force a reload on compile
 rm ../../libsais64-rs/libsais/CMakeCache.txt
+
+# compile
+cargo build --release
 
 search_folder="swissprot_var1/"
 search_prefix="$VSC_DATA/BenchmarkData/"
@@ -45,5 +45,6 @@ search_file="search_file_no_mch.tsv"
 folder=""
 prefix="$VSC_DATA_VO/bram/"
 
-# execute
-./suffixarray -d "$prefix""$folder"uniprotKB_protein_database.tsv --load-index "$prefix""$folder"uniprot_indexed_sparse3_sa.bin --suffix-to-protein-mapping sparse -t "$prefix"taxons.tsv -s "$search_prefix""$search_folder""$search_file" -m taxon-id
+# go to current working dir and execute
+cd $PBS_O_WORKDIR
+./suffixarray -d "$prefix""$folder"uniprotKB_protein_database.tsv --load-index "$prefix""$folder"uniprot_indexed_sparse3_sa.bin --suffix-to-protein-mapping sparse -t "$prefix"taxons.tsv -s "$search_prefix""$search_folder""$search_file" -m min-max-bound

@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.4.7", features = ["derive"] }
-umgap = "1.0.0"
+umgap = "1.1.0"
 tsv-utils = { path = "../tsv-utils"}
