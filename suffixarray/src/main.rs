@@ -1,9 +1,10 @@
-use std::error::Error;
 use clap::Parser;
 use suffixarray::{Arguments, run};
 
-fn main() -> Result<(), Box<dyn Error>>{
+fn main() {
     let args = Arguments::parse();
-    run(args)?;
-    Ok(())
+    if let Err(error) = run(args) {
+        eprintln!("{}", error);
+        std::process::exit(1);
+    };
 }

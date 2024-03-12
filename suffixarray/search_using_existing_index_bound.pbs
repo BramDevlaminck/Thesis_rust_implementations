@@ -28,6 +28,8 @@ module swap cluster/gallade
 # load Rust
 module load Rust/1.75.0-GCCcore-12.3.0
 module load Clang/16.0.6-GCCcore-12.3.0 # needed to build the bindings from Rust to C
+module load CMake/3.26.3-GCCcore-12.3.0
+
 
 # go to current working dir
 cd $PBS_O_WORKDIR

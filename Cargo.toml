@@ -5,5 +5,7 @@ members = [
     "suffixtree",
     "suffixarray",
     "tsv-utils",
-    "libsais64-rs"
+    "libsais64-rs",
+    "suffixarray_server",
+    "suffixarray_builder"
 ]

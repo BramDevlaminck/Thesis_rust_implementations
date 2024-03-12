@@ -5,17 +5,17 @@ use tsv_utils::taxon_id_calculator::TaxonIdCalculator;
 use crate::Nullable;
 use crate::suffix_to_protein_index::SuffixToProteinIndex;
 
-pub struct Searcher<'a> {
-    sa: &'a Vec<i64>,
+pub struct Searcher {
+    sa: Vec<i64>,
     pub sample_rate: u8,
-    suffix_index_to_protein: &'a dyn SuffixToProteinIndex,
-    proteins: &'a Proteins,
-    taxon_id_calculator: &'a TaxonIdCalculator
+    suffix_index_to_protein: Box<dyn SuffixToProteinIndex>,
+    proteins: Proteins,
+    taxon_id_calculator: TaxonIdCalculator
 }
 
-impl <'a> Searcher<'a> {
+impl Searcher {
 
-    pub fn new(sa: &'a Vec<i64>, sample_rate: u8, suffix_index_to_protein: &'a dyn SuffixToProteinIndex, proteins: &'a Proteins, taxon_id_calculator: &'a TaxonIdCalculator) -> Self {
+    pub fn new(sa: Vec<i64>, sample_rate: u8, suffix_index_to_protein: Box<dyn SuffixToProteinIndex>, proteins: Proteins, taxon_id_calculator: TaxonIdCalculator) -> Self {
         Self {
             sa,
             sample_rate,
@@ -170,29 +170,36 @@ impl <'a> Searcher<'a> {
     }
 
     /// Search all the suffixes that search string matches with
+    /// The first value is a boolean indicating if the cutoff is used, the second value returns the actual taxa
     #[inline]
-    pub fn search_matching_suffixes(&self, search_string: &[u8], max_matches: usize) -> Vec<i64> {
+    pub fn search_matching_suffixes(&self, search_string: &[u8], max_matches: usize) -> (bool, Vec<i64>) {
         let mut matching_suffixes: Vec<i64> = vec![];
         let mut skip: usize = 0;
-        while matching_suffixes.len() < max_matches && skip < self.sample_rate as usize {
+        while skip < self.sample_rate as usize {
             let (found, min_bound, max_bound) = self.search_bounds(&search_string[skip..]);
             // if the shorter part is matched, see if what goes before the matched suffix matches the unmatched part of the prefix
             if found {
                 let unmatched_prefix = &search_string[..skip];
                 // try all the partially matched suffixes and store the matching suffixes in an array (stop when our max number of matches is reached)
                 let mut sa_index = min_bound;
-                while sa_index < max_bound && matching_suffixes.len() < max_matches {
+                while sa_index < max_bound {
                     let suffix = self.sa[sa_index] as usize;
                     // if skip is 0, then we already checked the complete match during bound search, otherwise check if the skipped part also matches
                     if skip == 0 || (suffix >= skip && unmatched_prefix == &self.proteins.input_string[suffix - skip..suffix]) {
                         matching_suffixes.push((suffix - skip) as i64);
+
+                        // return if max number of matches is reached
+                        if matching_suffixes.len() >= max_matches {
+                            return (true, matching_suffixes);
+                        }
                     }
+                    
                     sa_index += 1;
                 }
             }
             skip += 1;
         }
-        matching_suffixes
+        (false, matching_suffixes)
     }
 
     /// get all the proteins matching with the given suffixes
@@ -210,12 +217,12 @@ impl <'a> Searcher<'a> {
 
     /// Search all the Proteins that a given search_string matches with
     pub fn search_protein(&self, search_string: &[u8]) -> Vec<&Protein> {
-        let matching_suffixes = self.search_matching_suffixes(search_string, usize::MAX);
+        let (_, matching_suffixes) = self.search_matching_suffixes(search_string, usize::MAX);
         self.retrieve_proteins(&matching_suffixes)
     }
 
     #[inline]
-    pub fn retrieve_taxon_id(&self, proteins: &[&Protein]) -> Option<TaxonId> {
+    pub fn retrieve_lca(&self, proteins: &[&Protein]) -> Option<TaxonId> {
         let taxon_ids: Vec<TaxonId> = proteins.iter().map(|prot| prot.id).collect();
         match taxon_ids.is_empty() {
             true => None,
@@ -223,8 +230,21 @@ impl <'a> Searcher<'a> {
         }
     }
 
-    pub fn search_taxon_id(&self, search_string: &[u8]) -> Option<TaxonId> {
-        self.retrieve_taxon_id(&self.search_protein(search_string))
+    /// Fetch the UniProt accession and taxa for all the proteins
+    pub fn get_uniprot_and_taxa_ids(proteins: &[&Protein]) -> (Vec<String>, Vec<TaxonId>) {
+        let mut uniprot_ids = vec![];
+        let mut taxa = vec![];
+
+        for &protein in proteins {
+            taxa.push(protein.id);
+            uniprot_ids.push(protein.uniprot_id.clone());
+        }
+
+        (uniprot_ids, taxa)
+    }
+
+    pub fn search_lca(&self, search_string: &[u8]) -> Option<TaxonId> {
+        self.retrieve_lca(&self.search_protein(search_string))
     }
 
 }

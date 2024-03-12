@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::io;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -114,10 +115,10 @@ fn handle_search_word(searcher: &mut Searcher, proteins: &Proteins, word: String
 
 
 /// Main run function that executes all the logic with the received arguments
-pub fn run(args: Arguments) {
+pub fn run(args: Arguments) -> Result<(), Box<dyn Error>> {
     let tree_taxon_id_calculator = TreeTaxonIdCalculator::new(&args.taxonomy);
 
-    let proteins = get_proteins_from_database_file(&args.database_file, &tree_taxon_id_calculator);
+    let proteins = get_proteins_from_database_file(&args.database_file, &tree_taxon_id_calculator)?;
     // construct the sequence that will be used to build the tree
     let data = &proteins.input_string;
 
@@ -133,14 +134,16 @@ pub fn run(args: Arguments) {
 
     // option that only builds the tree, but does not allow for querying (easy for benchmark purposes)
     if args.build_only {
-        return;
+        return Ok(());
     } else if args.mode.is_none() {
         eprintln!("search mode expected!");
         std::process::exit(1);
     }
 
     let searcher = Searcher::new(&tree, data, &proteins.proteins, &tree_taxon_id_calculator);
-    execute_search(searcher, &proteins, &args)
+    execute_search(searcher, &proteins, &args);
+    
+    Ok(())
 }
 
 /// Perform the search as set with the commandline arguments
@@ -151,7 +154,7 @@ fn execute_search(mut searcher: Searcher, proteins: &Proteins, args: &Arguments)
     if let Some(search_file) = &args.search_file {
         // File `search_file` must exist in the current path
         if let Ok(lines) = read_lines(search_file) {
-            for line in lines.into_iter().flatten() {
+            for line in lines.into_iter().map_while(Result::ok) {
                 handle_search_word(&mut searcher, proteins, line, mode, verbose, &mut verbose_output);
             }
         } else {
