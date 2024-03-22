@@ -26,10 +26,19 @@ pub struct Arguments {
     taxonomy: String,
 }
 
+/// Function used by serde to place a default value in the cutoff field of the input
+fn default_cutoff() -> usize {
+    10000
+}
+
 #[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
 struct InputData {
     peptides: Vec<String>,
-    cutoff: Option<usize>
+    #[serde(default = "default_cutoff")] // default value is 10000
+    cutoff: usize,
+    #[serde(default = "bool::default")] // default value is false
+    equalize_I_and_L: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,15 +65,24 @@ pub fn search_peptide(
     searcher: &Searcher,
     peptide: &str,
     cutoff: usize,
+    equalize_i_and_l: bool
 ) -> Option<(usize, bool, Vec<String>, Vec<usize>)> {
-    let peptide = peptide.to_uppercase();
+    let mut peptide = peptide.to_uppercase();
+    if equalize_i_and_l { // translate L to an I if we equalize them
+        peptide = peptide.chars()
+            .map(|character| match character {
+                'L' => 'I',
+                _ => character,
+            })
+            .collect()
+    }
 
     // words that are shorter than the sample rate are not searchable
     if peptide.len() < searcher.sample_rate as usize {
         return None;
     }
 
-    let (cutoff_used, suffixes) = searcher.search_matching_suffixes(peptide.as_bytes(), cutoff);
+    let (cutoff_used, suffixes) = searcher.search_matching_suffixes(peptide.as_bytes(), cutoff, equalize_i_and_l);
     let proteins = searcher.retrieve_proteins(&suffixes);
     let (uniprot_acc, taxa) = Searcher::get_uniprot_and_taxa_ids(&proteins);
     if cutoff_used {
@@ -81,13 +99,12 @@ async fn search(
     data: Json<InputData>,
 ) -> Result<Json<OutputData>, StatusCode> {
     
-    let cutoff = data.cutoff.unwrap_or(10000);
     
     let res: Vec<SearchResult> = data
         .peptides
         .par_iter()
         // calculate the results
-        .map(|peptide| search_peptide(&searcher, peptide, cutoff))
+        .map(|peptide| search_peptide(&searcher, peptide, data.cutoff, data.equalize_I_and_L))
         .enumerate()
         // remove the peptides that did not match any proteins
         .filter(|(_, search_result)| search_result.is_some())

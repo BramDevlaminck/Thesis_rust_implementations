@@ -18,6 +18,8 @@ use crate::util::get_time_ms;
 pub mod searcher;
 pub mod suffix_to_protein_index;
 pub mod util;
+mod sequence_bitpattern;
+
 /// Enum that represents the 5 kinds of search that we support
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum SearchMode {
@@ -68,27 +70,19 @@ pub struct Arguments {
     cutoff: usize,
     #[arg(long)]
     threads: Option<NonZeroUsize>,
+    #[arg(long)]
+    equalize_i_and_l: bool
 }
 
 pub fn run(mut args: Arguments) -> Result<(), Box<dyn Error>> {
-    let start_reading_proteins_ms = get_time_ms()?;
     let taxon_id_calculator = TaxonIdCalculator::new(&args.taxonomy, AggregationMethod::LcaStar);
-    // println!("taxonomy calculator built");
-
     let proteins = get_proteins_from_database_file(&args.database_file, &*taxon_id_calculator)?;
-
-    // construct the sequence that will be used to build the tree
-    // println!("read all proteins");
-    let current = get_time_ms()?;
-    // println!("Time spent for reading: {}", current - start_reading_proteins_ms);
 
     let sa = match &args.load_index {
         // load SA from file
         Some(index_file_name) => {
-            let start_loading_ms = get_time_ms()?;
             let (sample_rate, sa) = load_binary(index_file_name)?;
             args.sample_rate = sample_rate;
-            let end_loading_ms = get_time_ms()?;
             // println!("Loading the SA took {} ms and loading the proteins + SA took {} ms", end_loading_ms - start_loading_ms, end_loading_ms - start_reading_proteins_ms);
             // TODO: some kind of security check that the loaded database file and SA match
             sa
@@ -100,9 +94,7 @@ pub fn run(mut args: Arguments) -> Result<(), Box<dyn Error>> {
     };
 
     if let Some(output) = &args.output {
-        // println!("storing index to file {}", output);
         write_binary(args.sample_rate, &sa, output)?;
-        // println!("Index written away");
     }
 
     // option that only builds the tree, but does not allow for querying (easy for benchmark purposes)
@@ -123,7 +115,6 @@ pub fn run(mut args: Arguments) -> Result<(), Box<dyn Error>> {
                 Box::new(SparseSuffixToProtein::new(&proteins.input_string))
             }
         };
-    // println!("mapping built");
 
     let searcher = Searcher::new(
         sa,
@@ -139,7 +130,7 @@ pub fn run(mut args: Arguments) -> Result<(), Box<dyn Error>> {
 
 
 
-/// Perform the search as set with the commandline argumentsc
+/// Perform the search as set with the commandline arguments
 fn execute_search(searcher: &Searcher, args: &Arguments) -> Result<(), Box<dyn Error>> {
     let mode = args.mode.as_ref().ok_or("No search mode provided")?;
     let cutoff = args.cutoff;
@@ -162,7 +153,7 @@ fn execute_search(searcher: &Searcher, args: &Arguments) -> Result<(), Box<dyn E
     all_peptides
         .par_iter()
         // calculate the results
-        .map(|peptide| search_peptide(searcher, peptide, mode, cutoff))
+        .map(|peptide| search_peptide(searcher, peptide, mode, cutoff, args.equalize_i_and_l))
         // output the results, collect is needed to store order so the output is in the right sequential order
         .collect::<Vec<String>>()// TODO: this collect that makes the output again sequential is possibly unneeded since we also output the corresponding peptide (but make sure this still makes the right peptide;taxon-id mapping)
         .iter()
@@ -186,29 +177,39 @@ pub fn search_peptide(
     word: &str,
     search_mode: &SearchMode,
     cutoff: usize,
+    equalize_i_and_l: bool
 ) -> String {
-    let word = word.strip_suffix('\n').unwrap_or(word).to_uppercase();
+    let mut peptide = word.strip_suffix('\n').unwrap_or(word).to_uppercase();
+    if equalize_i_and_l { // translate L to an I if we equalize them
+        peptide = peptide.chars()
+            .map(|character| match character {
+                'L' => 'I',
+                _ => character,
+            })
+            .collect()
+    }
 
     // words that are shorter than the sample rate are not searchable
-    if word.len() < searcher.sample_rate as usize {
+    if peptide.len() < searcher.sample_rate as usize {
         println!("/ (word too short short for SA sample size)");
         return String::new();
     }
 
     match *search_mode {
-        SearchMode::Match => format!("{}", searcher.search_if_match(word.as_bytes())),
+        SearchMode::Match => format!("{}", searcher.search_if_match(peptide.as_bytes(), equalize_i_and_l)),
         SearchMode::MinMaxBound => {
-            let (found, min_bound, max_bound) = searcher.search_bounds(word.as_bytes());
-            format!("{found};{min_bound};{max_bound};")
+            let (found, min_max_bounds) = searcher.search_bounds(peptide.as_bytes(), equalize_i_and_l);
+            format!("{found};{:?}", min_max_bounds)
         }
         SearchMode::AllOccurrences => {
-            let results = searcher.search_protein(word.as_bytes());
+            let results = searcher.search_protein(peptide.as_bytes(), equalize_i_and_l);
             let number_of_proteins = results.len();
-            let peptide_length = word.len();
+            let peptide_length = peptide.len();
+            println!("{:?}", results);
             format!("{peptide_length};{number_of_proteins};") // TODO: return all the matching protein strings perhaps?
         }
         SearchMode::TaxonId => {
-            let (cutoff_used, suffixes) = searcher.search_matching_suffixes(word.as_bytes(), cutoff);
+            let (cutoff_used, suffixes) = searcher.search_matching_suffixes(peptide.as_bytes(), cutoff, equalize_i_and_l);
             let result = if cutoff_used {
                 Some(1)
             } else {
@@ -223,7 +224,7 @@ pub fn search_peptide(
             }
         }
         SearchMode::Analyses => {
-            let (cutoff_used, suffixes) = searcher.search_matching_suffixes(word.as_bytes(), cutoff);
+            let (cutoff_used, suffixes) = searcher.search_matching_suffixes(peptide.as_bytes(), cutoff, equalize_i_and_l);
             let proteins = searcher.retrieve_proteins(&suffixes);
             let result = if cutoff_used {
                 Some(1)

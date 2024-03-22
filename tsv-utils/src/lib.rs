@@ -35,7 +35,7 @@ impl Proteins {
     }
 }
 
-
+#[derive(Debug)]
 /// The useful information about a protein for our use case
 pub struct Protein {
     pub uniprot_id: String,
