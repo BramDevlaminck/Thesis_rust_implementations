@@ -110,48 +110,33 @@ impl Searcher {
 
     fn replace_i_with_l(
         equalize_i_and_l: bool,
-        to_visit: &mut VecDeque<(usize, usize, usize, usize, Vec<u8>, Option<usize>)>,
+        to_visit: &mut VecDeque<(usize, usize, usize, usize, Vec<u8>)>,
         current_search_string: &mut [u8],
         positions_to_switch_i_and_l: Vec<usize>,
         left: usize,
         right: usize,
         lcp_left: usize,
         lcp_right: usize,
-        current_min_l_location: Option<usize>,
         visited_strings: &mut SequenceBitPattern,
         il_locations: &Vec<usize>,
     ) {
         if equalize_i_and_l {
             for switch_location in positions_to_switch_i_and_l {
-                // TODO: current_min_l_location is possibly entirely unneeded since we also have the visited_strings hashset that tracks what is already visited
-                if current_min_l_location.is_none()
-                    || current_min_l_location.unwrap() < switch_location
-                {
-                    let mut search_string_copy = current_search_string.to_owned();
-                    search_string_copy[switch_location] = match search_string_copy[switch_location]
-                    {
-                        b'I' => b'L',
-                        _ => search_string_copy[switch_location],
-                    };
+                let mut search_string_copy = current_search_string.to_owned();
+                search_string_copy[switch_location] = match search_string_copy[switch_location] {
+                    b'I' => b'L',
+                    _ => search_string_copy[switch_location],
+                };
 
-                    // only add the IL variant of this string if it is not yet visited (or in the queue waiting to be visited)
-                    if !visited_strings.check_if_contains_and_add(&search_string_copy, &il_locations)
-                    {
-                        let new_min_l_location = if current_min_l_location.is_none() {
-                            Some(switch_location)
-                        } else {
-                            current_min_l_location
-                        };
-
-                        to_visit.push_back((
-                            left,
-                            right,
-                            lcp_left,
-                            lcp_right,
-                            search_string_copy.clone(),
-                            new_min_l_location,
-                        ));
-                    }
+                // only add the IL variant of this string if it is not yet visited (or in the queue waiting to be visited)
+                if !visited_strings.check_if_contains_and_add(&search_string_copy, &il_locations) {
+                    to_visit.push_back((
+                        left,
+                        right,
+                        lcp_left,
+                        lcp_right,
+                        search_string_copy.clone(),
+                    ));
                 }
             }
         }
@@ -173,8 +158,7 @@ impl Searcher {
             usize,
             usize,
             Vec<u8>,
-            Option<usize>,
-        )> = VecDeque::from([(0, self.sa.len(), 0, 0, search_string.to_owned(), None)]);
+        )> = VecDeque::from([(0, self.sa.len(), 0, 0, search_string.to_owned())]);
 
         // let mut visited_strings: HashSet<Vec<u8>> = HashSet::new();
 
@@ -184,7 +168,6 @@ impl Searcher {
             mut lcp_left,
             mut lcp_right,
             mut search_string,
-            min_l_location,
         )) = configurations_to_visit.pop_front()
         {
             let mut found = false;
@@ -210,7 +193,6 @@ impl Searcher {
                     right,
                     lcp_left,
                     lcp_right,
-                    min_l_location,
                     &mut visited_pattern,
                     il_locations,
                 );
@@ -247,7 +229,6 @@ impl Searcher {
                     right,
                     lcp_left,
                     lcp_right,
-                    min_l_location,
                     &mut visited_pattern,
                     il_locations,
                 );
@@ -289,11 +270,13 @@ impl Searcher {
                 })
         }
 
-        let (found_min, min_bound) = self.binary_search_bound(MINIMUM, search_string, &il_locations);
+        let (found_min, min_bound) =
+            self.binary_search_bound(MINIMUM, search_string, &il_locations);
         if !found_min.iter().any(|&f| f) {
             return (false, vec![(0, self.sa.len())]);
         }
-        let (found_max, max_bound) = self.binary_search_bound(MAXIMUM, search_string, &il_locations);
+        let (found_max, max_bound) =
+            self.binary_search_bound(MAXIMUM, search_string, &il_locations);
 
         // Only get the values from the min and max bound search that actually had a match
         let min_bounds: Vec<usize> = found_min
